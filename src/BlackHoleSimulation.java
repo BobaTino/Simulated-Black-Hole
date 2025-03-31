@@ -5,6 +5,7 @@ import static org.lwjgl.opengl.GL11.*;
 import static org.lwjgl.system.MemoryUtil.NULL;
 
 import java.nio.FloatBuffer;
+import java.util.LinkedList;
 import java.util.Random;
 import org.lwjgl.BufferUtils;
 
@@ -13,6 +14,19 @@ public class BlackHoleSimulation {
     private long window;
     private int width = 1200;
     private int height = 900;
+
+    private float panX = 0.0f;
+    private float panY = 0.0f;
+    private float rotationX = 20.0f;  // Tilt view
+    private float rotationY = 0.0f;   // Around black hole
+    private final float panSpeed = 0.05f;
+    private final float rotationSpeed = 2.5f;
+
+    private boolean leftMousePressed = false;
+    private boolean rightMousePressed = false;
+    private double lastMouseX, lastMouseY;
+
+
     
     // Adjusted black hole properties
     private final float blackHoleRadius = 0.4f;
@@ -39,37 +53,60 @@ public class BlackHoleSimulation {
         float size;
         float[] color = new float[3];
         float life;
-        
+
+        private static final int TRAIL_LENGTH = 8;
+        LinkedList<float[]> trail = new LinkedList<>();
+
         public Particle() {
             reset();
             life = 1.0f;
         }
-        
+
         public void reset() {
             distance = eventHorizonRadius + random.nextFloat() * 1.5f;
             angle = random.nextFloat() * (float)Math.PI * 2;
             height = (random.nextFloat() - 0.5f) * 0.1f;
             speed = (0.3f + random.nextFloat() * 0.7f) / (distance * distance);
             size = 0.015f + random.nextFloat() * 0.03f;
-            
-            // Changed to warm color scheme
+
             float tempFactor = 1.0f - (distance - eventHorizonRadius) / 1.5f;
-            color[0] = 0.9f + tempFactor * 0.1f;  // Red (dominant)
-            color[1] = 0.3f + tempFactor * 0.5f;  // Green (for orange/yellow mix)
-            color[2] = 0.1f * tempFactor;         // Blue (minimal)
+            color[0] = 0.9f + tempFactor * 0.1f;
+            color[1] = 0.3f + tempFactor * 0.5f;
+            color[2] = 0.1f * tempFactor;
+
+            trail.clear();
+            addCurrentPositionToTrail();
             life = 1.0f;
         }
-        
+
         public void update(float deltaTime) {
             if (paused) return;
-            
+
             angle += speed * deltaTime;
             distance -= 0.00005f * deltaTime;
             height *= 0.998f;
             life -= 0.0001f * deltaTime;
-            
+
+            addCurrentPositionToTrail();
+
             if (distance < eventHorizonRadius || life <= 0) {
                 reset();
+            }
+        }
+
+        private void addCurrentPositionToTrail() {
+            float x = (float) (distance * Math.cos(angle));
+            float z = (float) (distance * Math.sin(angle));
+            float r = (float) Math.sqrt(x * x + z * z);
+            float angleFromView = (float) Math.atan2(z, x);
+            float warpBend = (float) Math.sin(angleFromView);
+            float maxWarp = 0.45f;
+            float verticalWarp = warpBend * maxWarp * (float) Math.exp(-Math.pow((r - blackHoleRadius) * 1.6f, 2));
+            float y = verticalWarp;
+
+            trail.addFirst(new float[]{x, y, z});
+            if (trail.size() > TRAIL_LENGTH) {
+                trail.removeLast();
             }
         }
     }
@@ -102,15 +139,59 @@ public class BlackHoleSimulation {
             (vidmode.height() - height) / 2
         );
         
-        // Set key callback
         GLFW.glfwSetKeyCallback(window, (window, key, scancode, action, mods) -> {
-            if (key == GLFW.GLFW_KEY_ESCAPE && action == GLFW.GLFW_RELEASE) {
-                GLFW.glfwSetWindowShouldClose(window, true);
-            }
-            if (key == GLFW.GLFW_KEY_SPACE && action == GLFW.GLFW_RELEASE) {
-                paused = !paused;
+            if (action == GLFW.GLFW_PRESS || action == GLFW.GLFW_REPEAT) {
+                switch (key) {
+                    case GLFW.GLFW_KEY_ESCAPE -> GLFW.glfwSetWindowShouldClose(window, true);
+                    case GLFW.GLFW_KEY_SPACE -> paused = !paused;
+                    case GLFW.GLFW_KEY_W -> panY += panSpeed;
+                    case GLFW.GLFW_KEY_S -> panY -= panSpeed;
+                    case GLFW.GLFW_KEY_A -> panX -= panSpeed;
+                    case GLFW.GLFW_KEY_D -> panX += panSpeed;
+                    case GLFW.GLFW_KEY_LEFT -> rotationY -= rotationSpeed;
+                    case GLFW.GLFW_KEY_RIGHT -> rotationY += rotationSpeed;
+                    case GLFW.GLFW_KEY_UP -> rotationX -= rotationSpeed;
+                    case GLFW.GLFW_KEY_DOWN -> rotationX += rotationSpeed;
+                }
             }
         });
+
+                // Mouse button callback
+        GLFW.glfwSetMouseButtonCallback(window, (win, button, action, mods) -> {
+            if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+                leftMousePressed = (action == GLFW.GLFW_PRESS);
+            }
+            if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
+                rightMousePressed = (action == GLFW.GLFW_PRESS);
+            }
+        });
+
+                // Scroll wheel callback for zoom
+        GLFW.glfwSetScrollCallback(window, (win, xoffset, yoffset) -> {
+            cameraDistance -= (float) yoffset * 0.1f;
+            cameraDistance = Math.max(0.5f, Math.min(cameraDistance, 10.0f));  // Clamp zoom range
+        });
+
+
+        // Cursor position callback
+        GLFW.glfwSetCursorPosCallback(window, (win, xpos, ypos) -> {
+            double dx = xpos - lastMouseX;
+            double dy = ypos - lastMouseY;
+            lastMouseX = xpos;
+            lastMouseY = ypos;
+
+            if (leftMousePressed) {
+                panX += (float) dx * 0.002f;
+                panY -= (float) dy * 0.002f;
+            }
+
+            if (rightMousePressed) {
+                rotationY += dx * 0.5f;
+                rotationX += dy * 0.5f;
+            }
+        });
+
+        
         
         GLFW.glfwMakeContextCurrent(window);
         GLFW.glfwSwapInterval(1);
@@ -167,13 +248,20 @@ public class BlackHoleSimulation {
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
     
-        float camX = (float) (cameraDistance * Math.sin(cameraAngle + Math.PI));
-        float camZ = (float) (cameraDistance * Math.cos(cameraAngle + Math.PI));
-        gluLookAt(camX, cameraHeight, camZ,
+        // Orbiting camera around Y-axis based on rotationY
+        float camX = (float) (cameraDistance * Math.sin(Math.toRadians(rotationY)));
+        float camZ = (float) (cameraDistance * Math.cos(Math.toRadians(rotationY)));
+        float camY = cameraHeight;
+    
+        gluLookAt(camX, camY, camZ,
                 0.0f, 0.0f, 0.0f,
                 0.0f, 1.0f, 0.0f);
     
-        // Draw glow around event horizon
+        // Apply panning and scene rotation
+        glTranslatef(panX, panY, 0.0f);  // Pan in X/Y
+        glRotatef(rotationX, 1.0f, 0.0f, 0.0f);  // Rotate scene up/down
+    
+        // Draw event horizon glow
         for (int i = 0; i < 3; i++) {
             float scale = 1.0f + i * 0.05f;
             float alpha = 0.2f - i * 0.05f;
@@ -184,55 +272,47 @@ public class BlackHoleSimulation {
             glPopMatrix();
         }
     
-        // Draw accretion disk
-        glBegin(GL_POINTS);
+        // Draw particles and their trails
         for (Particle p : particles) {
-            // Skip particles too close to core
             if (p.distance < blackHoleRadius * 1.1f) continue;
     
-            float x = (float) (p.distance * Math.cos(p.angle));
-            float z = (float) (p.distance * Math.sin(p.angle));
-            float r = (float) Math.sqrt(x * x + z * z);
-
-            // Angle from camera view (simulate orbit symmetry)
-            float angleFromView = (float) Math.atan2(z, x);
-            float warpBend = (float) Math.sin(angleFromView);
-
-            // Exponential bending factor (gravitational lensing)
-            float maxWarp = 0.45f;
-            float verticalWarp = warpBend * maxWarp * (float) Math.exp(-Math.pow((r - blackHoleRadius) * 1.6f, 2));
-
-            // Final Y position
-            float y = verticalWarp;
-
+            // Draw trail
+            glBegin(GL_LINE_STRIP);
+            int i = 0;
+            for (float[] pos : p.trail) {
+                float alpha = (1.0f - i / (float) p.trail.size()) * p.life;
+                glColor4f(p.color[0], p.color[1], p.color[2], alpha);
+                glVertex3f(pos[0], pos[1], pos[2]);
+                i++;
+            }
+            glEnd();
+    
+            // Draw main particle
+            float[] pos = p.trail.getFirst();
             float lensFactor = 1.0f + 0.7f * blackHoleRadius / p.distance;
             float distortion = 1.0f + 0.3f * (float) Math.sin(p.angle * 5);
             float pointSize = p.size * 120 * lensFactor * distortion;
     
-            glColor3f(
-                    p.color[0] * p.life,
-                    p.color[1] * p.life,
-                    p.color[2] * p.life
-            );
-    
-            // Draw warped layer
+            glColor3f(p.color[0] * p.life, p.color[1] * p.life, p.color[2] * p.life);
             glPointSize(pointSize);
-            glVertex3f(x, y, z);
+            glBegin(GL_POINTS);
+            glVertex3f(pos[0], pos[1], pos[2]);
+            glEnd();
         }
-        glEnd();
     
-        // Draw gravitational lensing rings
+        // Gravitational lensing rings
         drawGravitationalLensing();
-
-        // Draw photon ring
+    
+        // Photon ring
         drawPhotonRing();
     
-        // Draw black hole core LAST to block out center
+        // Black hole core
         glColor3f(0.0f, 0.0f, 0.0f);
         glPushMatrix();
         glutSolidSphere(blackHoleRadius, 64, 64);
         glPopMatrix();
-    }    
+    }
+    
     
     private void drawPhotonRing() {
     float baseRadius = blackHoleRadius * 1.45f; // very close to horizon
