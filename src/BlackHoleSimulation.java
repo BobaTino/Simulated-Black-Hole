@@ -30,6 +30,8 @@ public class BlackHoleSimulation {
     private double lastMouseX, lastMouseY;
 
     private Scene blackHoleScene;
+
+    private boolean objNotFound = false;
     
 
 
@@ -222,10 +224,9 @@ public class BlackHoleSimulation {
         
         //This will parse the Sphere OBJ File
         try {
-            blackHoleScene = OBJModel.parse("Textures\\sphere.obj"); 
+            blackHoleScene = OBJModel.parse("hi\\Textures\\sphere.obj"); 
         } catch (IOException e) {
-            e.printStackTrace();
-            System.exit(-1);
+            objNotFound = true;
         }
         
     }
@@ -325,10 +326,21 @@ public class BlackHoleSimulation {
         drawPhotonRing();
     
         // Black hole core
-        glColor3f(0.0f, 0.0f, 0.0f);
-        glScalef(blackHoleRadius, blackHoleRadius, blackHoleRadius); // scale to match size
-        renderOBJScene(blackHoleScene);
-        glPopMatrix();
+        if(!objNotFound)
+        {
+            glColor3f(0.0f, 0.0f, 0.0f);
+            glScalef(blackHoleRadius, blackHoleRadius, blackHoleRadius); // scale to match size
+            renderOBJScene(blackHoleScene);
+            glPopMatrix();
+        } else {
+            // Draw black hole core LAST to block out center
+            glColor3f(0.0f, 0.0f, 0.0f);
+            glPushMatrix();
+            glutSolidSphere(blackHoleRadius, 64, 64);
+            glPopMatrix();
+
+        }
+      
     }
     
     
