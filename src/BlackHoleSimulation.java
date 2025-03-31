@@ -31,9 +31,6 @@ public class BlackHoleSimulation {
 
     private Scene blackHoleScene;
     
-
-
-    
     // Adjusted black hole properties
     private final float blackHoleRadius = 0.4f;
     private final float eventHorizonRadius = 0.6f;
@@ -43,7 +40,7 @@ public class BlackHoleSimulation {
     private Particle[] particles = new Particle[NUM_PARTICLES];
     
     // Camera settings
-    private float cameraDistance = 2.0f;
+    private float cameraDistance = 4.0f;
     private float cameraAngle = 0.0f;
     private float cameraHeight = 0.4f;
     private float cameraSpeed = 0.03f;
@@ -55,31 +52,37 @@ public class BlackHoleSimulation {
         float distance;
         float angle;
         float height;
-        float speed;
         float size;
         float[] color = new float[3];
         float life;
 
+        // Enhanced physics variables:
+        float radialVelocity;
+        float angularVelocity;
+        // Gravitational parameter (GM = 1.0)
+        final float GM = 1.0f;
+        
         private static final int TRAIL_LENGTH = 8;
         LinkedList<float[]> trail = new LinkedList<>();
 
         public Particle() {
             reset();
-            life = 1.0f;
         }
 
         public void reset() {
+            // Initialize position above event horizon
             distance = eventHorizonRadius + random.nextFloat() * 1.5f;
             angle = random.nextFloat() * (float)Math.PI * 2;
             height = (random.nextFloat() - 0.5f) * 0.1f;
-            speed = (0.3f + random.nextFloat() * 0.7f) / (distance * distance);
+            // For a circular orbit, ω = sqrt(GM / r^3)
+            angularVelocity = (float)Math.sqrt(GM / (distance * distance * distance));
+            // Add a small random perturbation to radial velocity
+            radialVelocity = (random.nextFloat() - 0.5f) * 0.05f;
             size = 0.015f + random.nextFloat() * 0.03f;
-
             float tempFactor = 1.0f - (distance - eventHorizonRadius) / 1.5f;
             color[0] = 0.9f + tempFactor * 0.1f;
             color[1] = 0.3f + tempFactor * 0.5f;
             color[2] = 0.1f * tempFactor;
-
             trail.clear();
             addCurrentPositionToTrail();
             life = 1.0f;
@@ -87,10 +90,22 @@ public class BlackHoleSimulation {
 
         public void update(float deltaTime) {
             if (paused) return;
-
-            angle += speed * deltaTime;
-            distance -= 0.00005f * deltaTime;
+            
+            // Compute radial acceleration: a_r = r * ω^2 - GM / r^2
+            float acceleration_r = distance * angularVelocity * angularVelocity - (GM / (distance * distance));
+            // Compute angular acceleration: a_θ = - (2 * v_r * ω) / r
+            float acceleration_theta = - (2 * radialVelocity * angularVelocity) / distance;
+            
+            // Update velocities using Euler integration
+            radialVelocity += acceleration_r * deltaTime;
+            angularVelocity += acceleration_theta * deltaTime;
+            // Update positions
+            distance += radialVelocity * deltaTime;
+            angle += angularVelocity * deltaTime;
+            
+            // Dampen vertical movement slightly
             height *= 0.998f;
+            // Decrease life over time
             life -= 0.0001f * deltaTime;
 
             addCurrentPositionToTrail();
@@ -109,7 +124,6 @@ public class BlackHoleSimulation {
             float maxWarp = 0.45f;
             float verticalWarp = warpBend * maxWarp * (float) Math.exp(-Math.pow((r - blackHoleRadius) * 1.6f, 2));
             float y = verticalWarp;
-
             trail.addFirst(new float[]{x, y, z});
             if (trail.size() > TRAIL_LENGTH) {
                 trail.removeLast();
@@ -124,9 +138,6 @@ public class BlackHoleSimulation {
     }
     
     private void init() {
-
-        
-
         if (!GLFW.glfwInit()) {
             throw new IllegalStateException("Unable to initialize GLFW");
         }
@@ -165,7 +176,7 @@ public class BlackHoleSimulation {
             }
         });
 
-                // Mouse button callback
+        // Mouse button callback
         GLFW.glfwSetMouseButtonCallback(window, (win, button, action, mods) -> {
             if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
                 leftMousePressed = (action == GLFW.GLFW_PRESS);
@@ -175,12 +186,11 @@ public class BlackHoleSimulation {
             }
         });
 
-                // Scroll wheel callback for zoom
+        // Scroll wheel callback for zoom
         GLFW.glfwSetScrollCallback(window, (win, xoffset, yoffset) -> {
             cameraDistance -= (float) yoffset * 0.1f;
             cameraDistance = Math.max(0.5f, Math.min(cameraDistance, 10.0f));  // Clamp zoom range
         });
-
 
         // Cursor position callback
         GLFW.glfwSetCursorPosCallback(window, (win, xpos, ypos) -> {
@@ -200,8 +210,6 @@ public class BlackHoleSimulation {
             }
         });
 
-        
-        
         GLFW.glfwMakeContextCurrent(window);
         GLFW.glfwSwapInterval(1);
         GLFW.glfwShowWindow(window);
@@ -220,14 +228,13 @@ public class BlackHoleSimulation {
             particles[i] = new Particle();
         }
         
-        //This will parse the Sphere OBJ File
+        // This will parse the Sphere OBJ File
         try {
             blackHoleScene = OBJModel.parse("Textures\\sphere.obj"); 
         } catch (IOException e) {
             e.printStackTrace();
             System.exit(-1);
         }
-        
     }
     
     private void loop() {
@@ -237,10 +244,6 @@ public class BlackHoleSimulation {
             float currentTime = (float)GLFW.glfwGetTime();
             float deltaTime = currentTime - lastTime;
             lastTime = currentTime;
-            
-            // if (!paused) {
-            //     cameraAngle += cameraSpeed * deltaTime;
-            // }
             
             for (Particle p : particles) {
                 p.update(deltaTime);
@@ -331,26 +334,25 @@ public class BlackHoleSimulation {
         glPopMatrix();
     }
     
-    
     private void drawPhotonRing() {
-    float baseRadius = blackHoleRadius * 1.45f; // very close to horizon
-    int rings = 10;                             // number of concentric rings
-    int segments = 256;
+        float baseRadius = blackHoleRadius * 1.45f; // very close to horizon
+        int rings = 10;                             // number of concentric rings
+        int segments = 256;
     
-    for (int i = 0; i < rings; i++) {
-        float radius = baseRadius + i * 0.01f;
-        float alpha = 0.08f - i * 0.02f; // fade with distance
-        if (alpha <= 0) continue;
-
-        glColor4f(1.0f, 0.6f, 0.2f, alpha); // warm glow
-        glBegin(GL_LINE_LOOP);
-        for (int j = 0; j < segments; j++) {
-            float angle = (float) (2 * Math.PI * j / segments);
-            float x = (float) (radius * Math.cos(angle));
-            float z = (float) (radius * Math.sin(angle));
-            glVertex3f(x, 0.0f, z);
-        }
-        glEnd();
+        for (int i = 0; i < rings; i++) {
+            float radius = baseRadius + i * 0.01f;
+            float alpha = 0.08f - i * 0.02f; // fade with distance
+            if (alpha <= 0) continue;
+    
+            glColor4f(1.0f, 0.6f, 0.2f, alpha); // warm glow
+            glBegin(GL_LINE_LOOP);
+            for (int j = 0; j < segments; j++) {
+                float angle = (float) (2 * Math.PI * j / segments);
+                float x = (float) (radius * Math.cos(angle));
+                float z = (float) (radius * Math.sin(angle));
+                glVertex3f(x, 0.0f, z);
+            }
+            glEnd();
         }
     }
 
@@ -477,7 +479,7 @@ public class BlackHoleSimulation {
         }
     }
     
-    //This  is to render the obj file
+    // This method renders the OBJ model for the black hole core
     private void renderOBJScene(Scene scene) {
         glBegin(GL_TRIANGLES);
         for (Face face : scene.faces) {
@@ -486,7 +488,7 @@ public class BlackHoleSimulation {
                 Vector3 v1 = scene.vertices.get(face.vertices[1]);
                 Vector3 v2 = scene.vertices.get(face.vertices[2]);
     
-                // Optional: compute normal
+                // Compute normal for lighting
                 Vector3 edge1 = v1.subtract(v0);
                 Vector3 edge2 = v2.subtract(v0);
                 Vector3 normal = edge1.cross(edge2).normalize();
@@ -499,7 +501,6 @@ public class BlackHoleSimulation {
         }
         glEnd();
     }
-    
     
     public static void main(String[] args) {
         new BlackHoleSimulation().run();
