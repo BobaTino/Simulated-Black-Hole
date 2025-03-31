@@ -11,7 +11,7 @@ import org.lwjgl.BufferUtils;
 public class BlackHoleSimulation {
     
     private long window;
-    private int width = 1200;  // Increased window size
+    private int width = 1200;
     private int height = 900;
     
     // Adjusted black hole properties
@@ -19,7 +19,7 @@ public class BlackHoleSimulation {
     private final float eventHorizonRadius = 0.6f;
     
     // Particle system
-    private static final int NUM_PARTICLES = 10000;  // More particles
+    private static final int NUM_PARTICLES = 20000;  // More particles
     private Particle[] particles = new Particle[NUM_PARTICLES];
     
     // Camera settings
@@ -48,7 +48,7 @@ public class BlackHoleSimulation {
         public void reset() {
             distance = eventHorizonRadius + random.nextFloat() * 1.5f;
             angle = random.nextFloat() * (float)Math.PI * 2;
-            height = (random.nextFloat() - 0.5f) * 0.4f;
+            height = (random.nextFloat() - 0.5f) * 0.1f;
             speed = (0.3f + random.nextFloat() * 0.7f) / (distance * distance);
             size = 0.015f + random.nextFloat() * 0.03f;
             
@@ -139,9 +139,9 @@ public class BlackHoleSimulation {
             float deltaTime = currentTime - lastTime;
             lastTime = currentTime;
             
-            if (!paused) {
-                cameraAngle += cameraSpeed * deltaTime;
-            }
+            // if (!paused) {
+            //     cameraAngle += cameraSpeed * deltaTime;
+            // }
             
             for (Particle p : particles) {
                 p.update(deltaTime);
@@ -156,30 +156,24 @@ public class BlackHoleSimulation {
     
     private void render() {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        
+    
         // Set up projection
         glMatrixMode(GL_PROJECTION);
         glLoadIdentity();
-        float aspect = (float)width / (float)height;
+        float aspect = (float) width / (float) height;
         gluPerspective(65.0f, aspect, 0.1f, 100.0f);
-        
+    
         // Set up view
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
-        
-        float camX = (float)(cameraDistance * Math.sin(cameraAngle));
-        float camZ = (float)(cameraDistance * Math.cos(cameraAngle));
-        gluLookAt(camX, cameraHeight, camZ, 
-                 0.0f, 0.0f, 0.0f,
-                 0.0f, 1.0f, 0.0f);
-        
-        // Draw black hole
-        glColor3f(0.0f, 0.0f, 0.0f);
-        glPushMatrix();
-        glutSolidSphere(blackHoleRadius, 64, 64);
-        glPopMatrix();
-        
-        // Draw event horizon with glow effect
+    
+        float camX = (float) (cameraDistance * Math.sin(cameraAngle + Math.PI));
+        float camZ = (float) (cameraDistance * Math.cos(cameraAngle + Math.PI));
+        gluLookAt(camX, cameraHeight, camZ,
+                0.0f, 0.0f, 0.0f,
+                0.0f, 1.0f, 0.0f);
+    
+        // Draw glow around event horizon
         for (int i = 0; i < 3; i++) {
             float scale = 1.0f + i * 0.05f;
             float alpha = 0.2f - i * 0.05f;
@@ -189,31 +183,79 @@ public class BlackHoleSimulation {
             glutWireSphere(eventHorizonRadius, 32, 32);
             glPopMatrix();
         }
-        
+    
         // Draw accretion disk
         glBegin(GL_POINTS);
         for (Particle p : particles) {
-            float x = (float)(p.distance * Math.cos(p.angle));
-            float z = (float)(p.distance * Math.sin(p.angle));
-            
-            // Gravitational lensing effect
+            // Skip particles too close to core
+            if (p.distance < blackHoleRadius * 1.1f) continue;
+    
+            float x = (float) (p.distance * Math.cos(p.angle));
+            float z = (float) (p.distance * Math.sin(p.angle));
+            float r = (float) Math.sqrt(x * x + z * z);
+
+            // Angle from camera view (simulate orbit symmetry)
+            float angleFromView = (float) Math.atan2(z, x);
+            float warpBend = (float) Math.sin(angleFromView);
+
+            // Exponential bending factor (gravitational lensing)
+            float maxWarp = 0.45f;
+            float verticalWarp = warpBend * maxWarp * (float) Math.exp(-Math.pow((r - blackHoleRadius) * 1.6f, 2));
+
+            // Final Y position
+            float y = verticalWarp;
+
             float lensFactor = 1.0f + 0.7f * blackHoleRadius / p.distance;
-            float distortion = 1.0f + 0.3f * (float)Math.sin(p.angle * 5);
-            
+            float distortion = 1.0f + 0.3f * (float) Math.sin(p.angle * 5);
+            float pointSize = p.size * 120 * lensFactor * distortion;
+    
             glColor3f(
-                p.color[0] * p.life,
-                p.color[1] * p.life,
-                p.color[2] * p.life
+                    p.color[0] * p.life,
+                    p.color[1] * p.life,
+                    p.color[2] * p.life
             );
-            glPointSize(p.size * 120 * lensFactor * distortion);
-            glVertex3f(x, p.height, z);
+    
+            // Draw warped layer
+            glPointSize(pointSize);
+            glVertex3f(x, y, z);
         }
         glEnd();
-        
-        // Draw some lensing effects
-        drawGravitationalLensing();
-    }
     
+        // Draw gravitational lensing rings
+        drawGravitationalLensing();
+
+        // Draw photon ring
+        drawPhotonRing();
+    
+        // Draw black hole core LAST to block out center
+        glColor3f(0.0f, 0.0f, 0.0f);
+        glPushMatrix();
+        glutSolidSphere(blackHoleRadius, 64, 64);
+        glPopMatrix();
+    }    
+    
+    private void drawPhotonRing() {
+    float baseRadius = blackHoleRadius * 1.45f; // very close to horizon
+    int rings = 10;                             // number of concentric rings
+    int segments = 256;
+    
+    for (int i = 0; i < rings; i++) {
+        float radius = baseRadius + i * 0.01f;
+        float alpha = 0.08f - i * 0.02f; // fade with distance
+        if (alpha <= 0) continue;
+
+        glColor4f(1.0f, 0.6f, 0.2f, alpha); // warm glow
+        glBegin(GL_LINE_LOOP);
+        for (int j = 0; j < segments; j++) {
+            float angle = (float) (2 * Math.PI * j / segments);
+            float x = (float) (radius * Math.cos(angle));
+            float z = (float) (radius * Math.sin(angle));
+            glVertex3f(x, 0.0f, z);
+        }
+        glEnd();
+        }
+    }
+
     private void drawGravitationalLensing() {
         int rings = 5;
         glColor4f(0.9f, 0.6f, 0.1f, 0.1f);
