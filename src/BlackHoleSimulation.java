@@ -1,15 +1,18 @@
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWVidMode;
 import org.lwjgl.opengl.GL;
+import org.lwjgl.openvr.RenderModel;
+
 import static org.lwjgl.opengl.GL11.*;
 import static org.lwjgl.system.MemoryUtil.NULL;
 
+import java.io.IOException;
 import java.nio.FloatBuffer;
 import java.util.LinkedList;
 import java.util.Random;
 import org.lwjgl.BufferUtils;
 
-public class BlackHoleSimulation {
+public class BlackHoleSimulation {  
     
     private long window;
     private int width = 1200;
@@ -25,6 +28,11 @@ public class BlackHoleSimulation {
     private boolean leftMousePressed = false;
     private boolean rightMousePressed = false;
     private double lastMouseX, lastMouseY;
+
+    private Scene blackHoleScene;
+
+    private boolean objNotFound = false;
+    
 
 
     
@@ -119,6 +127,9 @@ public class BlackHoleSimulation {
     }
     
     private void init() {
+
+        
+
         if (!GLFW.glfwInit()) {
             throw new IllegalStateException("Unable to initialize GLFW");
         }
@@ -211,6 +222,14 @@ public class BlackHoleSimulation {
         for (int i = 0; i < NUM_PARTICLES; i++) {
             particles[i] = new Particle();
         }
+        
+        //This will parse the Sphere OBJ File
+        try {
+            blackHoleScene = OBJModel.parse("hi\\Textures\\sphere.obj"); 
+        } catch (IOException e) {
+            objNotFound = true;
+        }
+        
     }
     
     private void loop() {
@@ -308,10 +327,21 @@ public class BlackHoleSimulation {
         drawPhotonRing();
     
         // Black hole core
-        glColor3f(0.0f, 0.0f, 0.0f);
-        glPushMatrix();
-        glutSolidSphere(blackHoleRadius, 64, 64);
-        glPopMatrix();
+        if(!objNotFound)
+        {
+            glColor3f(0.0f, 0.0f, 0.0f);
+            glScalef(blackHoleRadius, blackHoleRadius, blackHoleRadius); // scale to match size
+            renderOBJScene(blackHoleScene);
+            glPopMatrix();
+        } else {
+            // Draw black hole core LAST to block out center
+            glColor3f(0.0f, 0.0f, 0.0f);
+            glPushMatrix();
+            glutSolidSphere(blackHoleRadius, 64, 64);
+            glPopMatrix();
+
+        }
+      
     }
     
     
@@ -459,6 +489,30 @@ public class BlackHoleSimulation {
             glEnd();
         }
     }
+    
+    //This  is to render the obj file
+    private void renderOBJScene(Scene scene) {
+        glBegin(GL_TRIANGLES);
+        for (Face face : scene.faces) {
+            if (face.vertices.length >= 3) {
+                Vector3 v0 = scene.vertices.get(face.vertices[0]);
+                Vector3 v1 = scene.vertices.get(face.vertices[1]);
+                Vector3 v2 = scene.vertices.get(face.vertices[2]);
+    
+                // Optional: compute normal
+                Vector3 edge1 = v1.subtract(v0);
+                Vector3 edge2 = v2.subtract(v0);
+                Vector3 normal = edge1.cross(edge2).normalize();
+                glNormal3d(normal.x, normal.y, normal.z);
+    
+                glVertex3d(v0.x, v0.y, v0.z);
+                glVertex3d(v1.x, v1.y, v1.z);
+                glVertex3d(v2.x, v2.y, v2.z);
+            }
+        }
+        glEnd();
+    }
+    
     
     public static void main(String[] args) {
         new BlackHoleSimulation().run();
