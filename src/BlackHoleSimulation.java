@@ -95,6 +95,7 @@ public class BlackHoleSimulation {
         }
 
         private void addCurrentPositionToTrail() {
+            
             float x = (float) (distance * Math.cos(angle));
             float z = (float) (distance * Math.sin(angle));
             float r = (float) Math.sqrt(x * x + z * z);
